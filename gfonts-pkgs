@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+
+trap 'exit 88' SIGUSR2
+set +o history
+set -o pipefail
+set -o errexit
+
+GfontsPkgsDir="$HOME/.local/share/gfonts-pkgs"
+GfontsPkgsState="$GfontsPkgsDir/current.json"
+GfontsPkgsRepoHttps="https://github.com/arpj-rebola/gfonts-pkgs.git"
+GfontsPkgsRepoSsh="git@github.com:arpj-rebola/gfonts-pkgs.git"
+
+die() {
+    local message="$1"
+	echo "error: $message" >&2
+	{
+		kill -s SIGUSR2 $$
+	}
+}
+
+run_package() {
+    local action="$1"
+    local input="$2"
+    local packages
+    local package
+    if test "$input" == "*"; then
+        mapfile -t packages < \
+            <(jq -Mcr 'keys | .[]' "$GfontsPkgsState" \
+                || die "Could not retrieve installed fonts")
+    else
+        packages=("$package")
+    fi
+    for package in "${packages[@]}"; do
+        case "$action" in
+            'install')
+                install_package "$package"
+            ;;
+            'update')
+                update_package "$package"
+            ;;
+            *)
+                die "Unknown action '$action'"
+            ;;
+        esac
+    done
+}
+
+install_package() {
+    local package="$1"
+    local current
+    local latest
+    local repo
+    current="$(get_current_tag "$package")"
+    if test "$current" != "null"; then
+        { echo "font '$package' is already installed"; exit 0; }
+    fi
+    latest="$(get_latest_tag "$package")"
+    repo="$(mkdir -d)" \
+        || die "Could not create temporary repository"
+    get_repository "$package" "$repo"
+    install_font "$package" "$repo"
+    update_tag "$latest"
+    echo "font '$package' was installed"
+}
+
+update_package() {
+    local package="$1"
+    local current
+    local latest
+    local repo
+    current="$(get_current_tag "$package")"
+    if test "$current" == "null"; then
+        { echo "font '$package' is not yet installed"; exit 0; }
+    fi
+    latest="$(get_latest_tag "$package")"
+    if test "$current" == "$latest"; then
+        { echo "font '$package' is up to date"; exit 0; }
+    fi
+    repo="$(mkdir -d)" \
+        || die "Could not create temporary repository"
+    get_repository "$package" "$repo"
+    install_font "$package" "$repo"
+    update_tag "$latest"
+    echo "font '$package' was updated"
+}
+
+install_font() {
+    local package="$1"
+    local repo="$2"
+    local target
+    target="/usr/share/fonts/truetype/$(basename "$package")" \
+        || die "Could not retrieve target directory"
+    sudo rm -rf "$target" \
+        || die "Could not delete stale target directory"
+    sudo install -m 755 -d "$target" \
+        || die "Could not create directory for font '$package'"
+    sudo install -m 644 "$repo/$package"/* "$target" \
+        || die "Could not install font '$package'"
+    fc-cache -f \
+        || die "Could not update font cache"
+}
+
+get_current_tag() {
+    local package="$1"
+    jq -Mcr --arg package "$package" '.[($package)]' "$GfontsPkgsState" \
+        || die "Could not retrieve current tag for font '$package'"
+}
+
+get_latest_tag() {
+    local package="$1"
+    curl -sS "https://api.github.com/repos/google/fonts/commits?path=$package" \
+        | jq 'first | .["sha"]' \
+        || die "Could not retrieve latest tag for font '$package'"
+}
+
+get_repository() {
+    local path="$1"
+    local repo="$2"
+    git clone --no-checkout --depth=1 --filter=tree:0 \
+            "https://github.com/google/fonts/" "$repo" \
+        || die "Could not clone Google Fonts repository"
+    git -C "$repo" sparse-checkout set --no-cone "/$path" \
+        || die "Could set sparse checkout for font '$path'"
+    git -C "$repo" checkout \
+        || die "Could not checkout font '$path'"
+}
+
+update_tag() {
+    local tag="$1"
+    jq -Mcr --arg package "$package" --arg tag "$tag" '
+            .[($package)] | $tag' "$GfontsPkgsState" \
+        | sponge "$GfontsPkgsState" \
+        || die "Could not update font tag"
+}
+
+manage_install() {
+    install -o "$USER" -g "$USER" -m 755 -d "$GfontsPkgsDir" \
+        || die "Could not create gfonts-pkgs directory"
+    git clone "$GfontsPkgsRepoHttps" "$GfontsPkgsDir" \
+        || die "Could not clone gfonts-pkgs repository"
+    chmod +x "$GfontsPkgsDir/gfonts-pkgs" \
+        || die "Could not make gfonts-pkgs executable"
+    jq -Mn '{}' \
+        | sponge "$GfontsPkgsState" \
+        || die "Could not create gfonts-pkgs state"
+    sudo ln -fs "$GfontsPkgsDir/gfonts-pkgs" "/usr/bin/gfonts-pkgs" \
+        || die "Could not create symbolic link to gfonts-pkgs"
+    echo "gfonts-pkgs was installed"
+}
+
+manage_escalate() {
+    git -C "$GfontsPkgsDir" remote remove origin \
+        || die "Could not delete HTTPS remote"
+    git -C "$GfontsPkgsDir" remote add origin "$GfontsPkgsRepoSsh" \
+        || die "Could not add SSH remote"
+    git -C "$GfontsPkgsDir" branch --set-upstream-to=origin/main \
+        || die "Could not set upstream to SSH remote"
+    git -C "$GfontsPkgsDir" pull \
+        || die "Could not update gfonts-pkgs"
+    echo "gfonts-pkgs was escalated to SSH access"
+}
+
+manage_update() {
+    git -C "$GfontsPkgsDir" pull \
+        || die "Could not pull data from repository"
+    echo "gfonts-pkgs was updated"
+}
+
+manage_upgrade() {
+    git -C "$GfontsPkgsDir" add sources/* \
+        || die "Could not add new sources to repository"
+    git -C "$GfontsPkgsDir" push \
+        || die "Could not push data to repository"
+    echo "gfonts-pkgs was upgraded"
+}
+
+run() {
+    local action="$1"
+    local argument="$2"
+    if test "$action" == "manage"; then
+        case "$argument" in
+            'install')
+                manage_install
+            ;;
+            'escalate')
+                manage_escalate
+            ;;
+            'update')
+                manage_update
+            ;;
+            'upgrade')
+                manage_upgrade
+            ;;
+            *)
+                die "Unrecognized management option '$argument'"
+            ;;
+        esac
+    else
+        run_package "$action" "$argument"
+    fi
+}
+
+run "$1" "$2"

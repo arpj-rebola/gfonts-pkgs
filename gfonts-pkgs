@@ -28,7 +28,7 @@ run_package() {
             <(jq -Mcr 'keys | .[]' "$GfontsPkgsState" \
                 || die "Could not retrieve installed fonts")
     else
-        packages=("$package")
+        packages=("$input")
     fi
     for package in "${packages[@]}"; do
         case "$action" in
@@ -55,7 +55,7 @@ install_package() {
         { echo "font '$package' is already installed"; exit 0; }
     fi
     latest="$(get_latest_tag "$package")"
-    repo="$(mkdir -d)" \
+    repo="$(mktemp -d)" \
         || die "Could not create temporary repository"
     get_repository "$package" "$repo"
     install_font "$package" "$repo"
@@ -76,7 +76,7 @@ update_package() {
     if test "$current" == "$latest"; then
         { echo "font '$package' is up to date"; exit 0; }
     fi
-    repo="$(mkdir -d)" \
+    repo="$(mktemp -d)" \
         || die "Could not create temporary repository"
     get_repository "$package" "$repo"
     install_font "$package" "$repo"
@@ -128,7 +128,7 @@ get_repository() {
 update_tag() {
     local tag="$1"
     jq -Mcr --arg package "$package" --arg tag "$tag" '
-            .[($package)] | $tag' "$GfontsPkgsState" \
+            .[($package)] |= $tag' "$GfontsPkgsState" \
         | sponge "$GfontsPkgsState" \
         || die "Could not update font tag"
 }

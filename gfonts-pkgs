@@ -156,10 +156,14 @@ manage_install() {
 }
 
 manage_escalate() {
-    git -C "$GfontsPkgsDir" remote remove origin \
-        || die "Could not delete HTTPS remote"
+    if git -C "$GfontsPkgsDir" remote show origin; then
+        git -C "$GfontsPkgsDir" remote remove origin \
+            || die "Could not delete HTTPS remote"
+    fi
     git -C "$GfontsPkgsDir" remote add origin "$GfontsPkgsRepoSsh" \
         || die "Could not add SSH remote"
+    git -C "$GfontsPkgsDir" fetch \
+        || die "Could not fetch remote through SSH"
     git -C "$GfontsPkgsDir" branch --set-upstream-to=origin/main \
         || die "Could not set upstream to SSH remote"
     git -C "$GfontsPkgsDir" pull \

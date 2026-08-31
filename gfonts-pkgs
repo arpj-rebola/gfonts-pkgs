@@ -94,7 +94,7 @@ install_font() {
         || die "Could not delete stale target directory"
     sudo install -m 755 -d "$target" \
         || die "Could not create directory for font '$package'"
-    sudo install -m 644 "$repo/$package"/* "$target" \
+    sudo cp -r "$repo/$package"/* "$target" \
         || die "Could not install font '$package'"
     fc-cache -f \
         || die "Could not update font cache"

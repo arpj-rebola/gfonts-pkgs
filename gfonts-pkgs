@@ -20,29 +20,23 @@ die() {
 
 run_package() {
     local action="$1"
-    local input="$2"
-    local packages
-    local package
-    if test "$input" == "*"; then
-        mapfile -t packages < \
-            <(jq -Mcr 'keys | .[]' "$GfontsPkgsState" \
-                || die "Could not retrieve installed fonts")
-    else
-        packages=("$input")
-    fi
-    for package in "${packages[@]}"; do
-        case "$action" in
-            'install')
-                install_package "$package"
-            ;;
-            'update')
-                update_package "$package"
-            ;;
-            *)
-                die "Unknown action '$action'"
-            ;;
-        esac
-    done
+    local package="$2"
+    case "$action" in
+        'install')
+            install_package "$package"
+        ;;
+        'update')
+            update_package "$package"
+        ;;
+        'update-all')
+            test -z "$package" \
+                || die "Package specification is not allowed for 'update-all'"
+            update_all_packages
+        ;;
+        *)
+            die "Unknown action '$action'"
+        ;;
+    esac
 }
 
 install_package() {
@@ -82,6 +76,17 @@ update_package() {
     install_font "$package" "$repo"
     update_tag "$latest"
     echo "font '$package' was updated"
+}
+
+update_all_packages() {
+    local packages
+    local package
+    mapfile -t packages < \
+        <(jq -Mcr 'keys | .[]' "$GfontsPkgsState" \
+            || die "Could not retrieve installed packages")
+    for package in "${packages[@]}"; do
+        update_package "$package"
+    done
 }
 
 install_font() {

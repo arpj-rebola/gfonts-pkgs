@@ -154,6 +154,8 @@ manage_install() {
         || die "Could not create gfonts-pkgs state"
     sudo ln -fs "$GfontsPkgsDir/gfonts-pkgs" "/usr/bin/gfonts-pkgs" \
         || die "Could not create symbolic link to gfonts-pkgs"
+    sudo chmod +x "/usr/bin/gfonts-pkgs" \
+        || die "Could not set permissions for gfonts-pkgs"
     echo "gfonts-pkgs was installed"
 }
 

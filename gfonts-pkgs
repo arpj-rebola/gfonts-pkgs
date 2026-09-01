@@ -23,7 +23,6 @@ run_package() {
     local input="$2"
     local packages
     local package
-    get_github_token
     if test "$input" == "*"; then
         mapfile -t packages < \
             <(jq -Mcr 'keys | .[]' "$GfontsPkgsState" \
@@ -109,15 +108,13 @@ get_current_tag() {
 
 get_latest_tag() {
     local package="$1"
-    curl -sS --header "Authorization: Bearer $GITHUB_TOKEN" \
+    local token
+    token="$(cat "$HOME/.github-rate-limit")" \
+        || die "Could not retrieve GitHub rate limit token"
+    curl -sS --header "Authorization: Bearer $token" \
             --url "https://api.github.com/repos/google/fonts/commits?path=$package" \
         | jq 'first | .["sha"]' \
         || die "Could not retrieve latest tag for font '$package'"
-}
-
-get_github_token() {
-    GITHUB_TOKEN="$(cat "$HOME/.github-rate-limit")" \
-        || die "Could not retrieve GitHub rate limit token"
 }
 
 get_repository() {

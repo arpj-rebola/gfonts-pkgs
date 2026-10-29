@@ -114,7 +114,7 @@ get_current_tag() {
 get_latest_tag() {
     local package="$1"
     local token
-    token="$(cat "$HOME/.github-rate-limit")" \
+    token="$(cat "$GfontsPkgsDir/.github-rate-limit")" \
         || die "Could not retrieve GitHub rate limit token"
     curl -sS --header "Authorization: Bearer $token" \
             --url "https://api.github.com/repos/google/fonts/commits?path=$package" \
